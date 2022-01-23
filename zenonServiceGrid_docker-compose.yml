@@ -1,0 +1,362 @@
+networks:
+  servicegrid-network:
+    driver: bridge
+    external: false
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
+      driver: default
+  proxy:
+    external: true
+    
+services:
+  configuration-backend:
+    container_name: configuration-backend
+    depends_on:
+      platform-configuration:
+        condition: service_started
+      service-grid-persistence:
+        condition: service_started
+    environment:
+      CONFIGURATIONBACKEND_HostingInformationConfiguration__Uri: 'https://${MACHINE_HOSTNAME}:9420'
+      CONFIGURATIONBACKEND_SgSystemConfiguration__AdminUser: '${SG_Persistence_Username}'
+      CONFIGURATIONBACKEND_SgSystemConfiguration__AdminUserPassword: '${SG_Persistence_Password}'
+      CONFIGURATIONBACKEND_SgSystemConfiguration__DatabaseUri: '${SG_Persistence_Uri:-mongodb://service-grid-persistence:27017}'
+    extra_hosts:
+      - '${MACHINE_HOSTNAME}:172.28.0.1'
+    image: 'copadata/configuration-backend:${TAG_VERSION:-latest}'
+    logging:
+      driver: json-file
+      options:
+        max-file: '5'
+        max-size: 10m
+    networks:
+      proxy:
+      servicegrid-network:
+        aliases:
+          - configuration-backend
+    ports:
+      - published: 9420
+        target: 9420
+    restart: on-failure
+    volumes:
+      - 'configuration-backend:/app/certs/:rw'
+      - 'service-grid-data:/var/service-grid-data/:rw'
+  data-hub:
+    container_name: data-hub
+    image: 'copadata/data-hub:${TAG_VERSION:-latest}'
+    logging:
+      driver: json-file
+      options:
+        max-file: '5'
+        max-size: 10m
+    networks:
+      proxy:
+      servicegrid-network:
+        aliases:
+          - data-hub
+    ports:
+      - published: 9411
+        target: 9411
+    volumes:
+      - 'data-hub-persistence:/mosquitto/data:rw'
+      - 'data-hub:/mosquitto/certs:rw'
+      - 'service-grid-data:/var/service-grid-data/:rw'
+  data-storage:
+    container_name: data-storage
+    depends_on:
+      platform-configuration:
+        condition: service_started
+      service-grid-persistence:
+        condition: service_started
+      servicegrid-redis:
+        condition: service_started
+    environment:
+      DATASTORAGE_HostingInformationConfiguration__Uri: 'https://${MACHINE_HOSTNAME}:9460'
+      DATASTORAGE_SgSystemConfiguration__AdminUser: '${SG_Persistence_Username}'
+      DATASTORAGE_SgSystemConfiguration__AdminUserPassword: '${SG_Persistence_Password}'
+      DATASTORAGE_SgSystemConfiguration__DatabaseUri: '${SG_Persistence_Uri:-mongodb://service-grid-persistence:27017}'
+    extra_hosts:
+      - '${MACHINE_HOSTNAME}:172.28.0.1'
+    image: 'copadata/data-storage:${TAG_VERSION:-latest}'
+    logging:
+      driver: json-file
+      options:
+        max-file: '5'
+        max-size: 10m
+    networks:
+      proxy:
+      servicegrid-network:
+        aliases:
+          - data-storage
+    ports:
+      - published: 9460
+        target: 9460
+    restart: on-failure
+    volumes:
+      - 'data-storage:/app/certs/:rw'
+      - 'service-grid-data:/var/service-grid-data/:rw'
+  hub-controller:
+    container_name: hub-controller
+    depends_on:
+      platform-configuration:
+        condition: service_started
+    environment:
+      HUBCONTROLLER_DataHubConfig__DefaultUrl: '${MACHINE_HOSTNAME}'
+      'HUBCONTROLLER_ExternalNameConfiguration__Names:0': hub-controller
+      'HUBCONTROLLER_ExternalNameConfiguration__Names:1': localhost
+      'HUBCONTROLLER_ExternalNameConfiguration__Names:2': '${MACHINE_HOSTNAME}'
+      HUBCONTROLLER_HostingInformationConfiguration__Uri: 'https://${MACHINE_HOSTNAME}:9410'
+      HUBCONTROLLER_SgSystemConfiguration__AdminUser: '${SG_Persistence_Username}'
+      HUBCONTROLLER_SgSystemConfiguration__AdminUserPassword: '${SG_Persistence_Password}'
+      HUBCONTROLLER_SgSystemConfiguration__DatabaseUri: '${SG_Persistence_Uri:-mongodb://service-grid-persistence:27017}'
+    extra_hosts:
+      - '${MACHINE_HOSTNAME}:172.28.0.1'
+    image: 'copadata/hub-controller:${TAG_VERSION:-latest}'
+    logging:
+      driver: json-file
+      options:
+        max-file: '5'
+        max-size: 10m
+    networks:
+      proxy:
+      servicegrid-network:
+        aliases:
+          - hub-controller
+    #labels:
+    #  - "traefik.enable=true"
+    #  - "traefik.http.routers.hub-controller.rule=Host(`zenon.tresch-automation.de`)"
+    #  - "traefik.http.services.hub-controller.loadbalancer.server.port=9410"
+    #  - "traefik.docker.network=proxy"
+    #ports:
+    #  - published: 9410
+    #    target: 9410
+    expose:
+      - 9410
+    restart: on-failure
+    volumes:
+      - 'hub-controller:/app/ControlHub/certs/:rw'
+      - 'hub-controller-bundle:/app/ControlHub/bundles/:rw'
+      - 'service-grid-data:/var/service-grid-data/:rw'
+  identity-management:
+    container_name: identity-management
+    depends_on:
+      platform-configuration:
+        condition: service_started
+      service-grid-persistence:
+        condition: service_started
+      servicegrid-redis:
+        condition: service_started
+    environment:
+      IDENTITYMANAGEMENT_HostingInformationConfiguration__Uri: 'https://${MACHINE_HOSTNAME}:9431'
+      IDENTITYMANAGEMENT_SgSystemConfiguration__AdminUser: '${SG_Persistence_Username}'
+      IDENTITYMANAGEMENT_SgSystemConfiguration__AdminUserPassword: '${SG_Persistence_Password}'
+      IDENTITYMANAGEMENT_SgSystemConfiguration__DatabaseUri: '${SG_Persistence_Uri:-mongodb://service-grid-persistence:27017}'
+    extra_hosts:
+      - '${MACHINE_HOSTNAME}:172.28.0.1'
+    image: 'copadata/identity-management:${TAG_VERSION:-latest}'
+    logging:
+      driver: json-file
+      options:
+        max-file: '5'
+        max-size: 10m
+    networks:
+      proxy:
+      servicegrid-network:
+        aliases:
+          - identity-management
+    ports:
+      - published: 9431
+        target: 9431
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.service-grid-studio.entrypoints=http"
+      - "traefik.http.routers.service-grid-studio.rule=Host(`zenon.tresch-automation.de`)"
+      - "traefik.http.middlewares.service-grid-studio-https-redirect.redirectscheme.scheme=https"
+      - "traefik.http.routers.service-grid-studio.middlewares=service-grid-studio-https-redirect"
+      - "traefik.http.routers.service-grid-studio-secure.entrypoints=https"
+      - "traefik.http.routers.service-grid-studio-secure.rule=Host(`zenon.tresch-automation.de`)"
+      - "traefik.http.routers.service-grid-studio-secure.tls=true"
+      - "traefik.http.routers.service-grid-studio-secure.tls.certresolver=le"
+      - "traefik.http.routers.service-grid-studio-secure.service=service-grid-studio"
+      - "traefik.http.services.service-grid-studio.loadbalancer.server.port=9431"
+      - "traefik.http.services.service-grid-studio.loadbalancer.server.scheme=https"
+      - "traefik.docker.network=proxy"
+    restart: on-failure
+    volumes:
+      - 'identity-management:/app/certs/:rw'
+      - 'service-grid-data:/var/service-grid-data/:rw'
+  identity-service:
+    container_name: identity-service
+    depends_on:
+      platform-configuration:
+        condition: service_started
+      service-grid-api:
+        condition: service_started
+      service-grid-persistence:
+        condition: service_started
+      servicegrid-redis:
+        condition: service_started
+    environment:
+      IDENTITYSERVICE_HostingInformationConfiguration__Uri: 'https://${MACHINE_HOSTNAME}:9430'
+      IDENTITYSERVICE_SgSystemConfiguration__AdminUser: '${SG_Persistence_Username}'
+      IDENTITYSERVICE_SgSystemConfiguration__AdminUserPassword: '${SG_Persistence_Password}'
+      IDENTITYSERVICE_SgSystemConfiguration__DatabaseUri: '${SG_Persistence_Uri:-mongodb://service-grid-persistence:27017}'
+    extra_hosts:
+      - '${MACHINE_HOSTNAME}:172.28.0.1'
+    image: 'copadata/identity-service:${TAG_VERSION:-latest}'
+    logging:
+      driver: json-file
+      options:
+        max-file: '5'
+        max-size: 10m
+    networks:
+      proxy:
+      servicegrid-network:
+        aliases:
+          - identity-service
+    ports:
+      - published: 9430
+        target: 9430
+    restart: on-failure
+    volumes:
+      - 'identity-service:/app/certs/:rw'
+      - 'service-grid-data:/var/service-grid-data/:rw'
+  platform-configuration:
+    container_name: platform-configuration
+    depends_on:
+      service-grid-persistence:
+        condition: service_started
+    environment:
+      SG_PLATFORM_CONFIGURATION_HostingInformationConfiguration__Uri: 'https://${MACHINE_HOSTNAME}:9470'
+      SG_PLATFORM_CONFIGURATION_SgSystemConfiguration__AdminUser: '${SG_Persistence_Username}'
+      SG_PLATFORM_CONFIGURATION_SgSystemConfiguration__AdminUserPassword: '${SG_Persistence_Password}'
+      SG_PLATFORM_CONFIGURATION_SgSystemConfiguration__DatabaseUri: '${SG_Persistence_Uri:-mongodb://service-grid-persistence:27017}'
+    extra_hosts:
+      - '${MACHINE_HOSTNAME}:172.28.0.1'
+    image: 'copadata/platform-configuration:${TAG_VERSION:-latest}'
+    logging:
+      driver: json-file
+      options:
+        max-file: '5'
+        max-size: 10m
+    networks:
+      proxy:
+      servicegrid-network:
+        aliases:
+          - platform-configuration
+    ports:
+      - published: 9470
+        target: 9470
+    restart: on-failure
+    volumes:
+      - 'hub-controller:/var/hub-controller-certificates/certs/:rw'
+      - 'service-grid-data:/var/service-grid-data/:rw'
+  service-grid-api:
+    container_name: service-grid-api
+    depends_on:
+      platform-configuration:
+        condition: service_started
+      service-grid-persistence:
+        condition: service_started
+      servicegrid-redis:
+        condition: service_started
+    environment:
+      SERVICEGRIDAPI_HostingInformationConfiguration__Uri: 'https://${MACHINE_HOSTNAME}:9400'
+      SERVICEGRIDAPI_SgSystemConfiguration__AdminUser: '${SG_Persistence_Username}'
+      SERVICEGRIDAPI_SgSystemConfiguration__AdminUserPassword: '${SG_Persistence_Password}'
+      SERVICEGRIDAPI_SgSystemConfiguration__DatabaseUri: '${SG_Persistence_Uri:-mongodb://service-grid-persistence:27017}'
+    extra_hosts:
+      - '${MACHINE_HOSTNAME}:172.28.0.1'
+    image: 'copadata/service-grid-api:${TAG_VERSION:-latest}'
+    logging:
+      driver: json-file
+      options:
+        max-file: '5'
+        max-size: 10m
+    networks:
+      servicegrid-network:
+        aliases:
+          - service-grid-api
+    ports:
+      - published: 9400
+        target: 9400
+    restart: on-failure
+    volumes:
+      - 'service-grid-api:/app/certs/:rw'
+      - 'service-grid-data:/var/service-grid-data/:rw'
+  service-grid-persistence:
+    container_name: service-grid-persistence
+    environment:
+      MONGO_INITDB_ROOT_PASSWORD: '${SG_Persistence_Password}'
+      MONGO_INITDB_ROOT_USERNAME: '${SG_Persistence_Username}'
+    image: 'mongo:4.2'
+    logging:
+      driver: json-file
+      options:
+        max-file: '5'
+        max-size: 10m
+    networks:
+      servicegrid-network: {}
+    volumes:
+      - 'service-grid-persistence:/data/db:rw'
+  service-grid-studio:
+    container_name: service-grid-studio
+    depends_on:
+      platform-configuration:
+        condition: service_started
+      service-grid-persistence:
+        condition: service_started
+    environment:
+      SERVICEGRIDPORTAL_PortalApplicationConfig__PortalApplications__1__ServiceUrl: 'https://${MACHINE_HOSTNAME}:9410'
+      SERVICEGRIDSTUDIO_HostingInformationConfiguration__Uri: 'https://${MACHINE_HOSTNAME}:9450'
+      SERVICEGRIDSTUDIO_PortalApplicationConfig__PortalApplications__0__ServiceUrl: 'https://${MACHINE_HOSTNAME}:9431'
+      SERVICEGRIDSTUDIO_SgSystemConfiguration__AdminUser: '${SG_Persistence_Username}'
+      SERVICEGRIDSTUDIO_SgSystemConfiguration__AdminUserPassword: '${SG_Persistence_Password}'
+      SERVICEGRIDSTUDIO_SgSystemConfiguration__DatabaseUri: '${SG_Persistence_Uri:-mongodb://service-grid-persistence:27017}'
+    extra_hosts:
+      - '${MACHINE_HOSTNAME}:172.28.0.1'
+    image: 'copadata/service-grid-studio:${TAG_VERSION:-latest}'
+    logging:
+      driver: json-file
+      options:
+        max-file: '5'
+        max-size: 10m
+    networks:
+      proxy: {}
+      servicegrid-network:
+        aliases:
+          - service-grid-studio
+    #expose:
+    #  - 9450
+    ports:
+      - published: 9450
+        target: 9450
+    restart: on-failure
+    volumes:
+      - 'service-grid-studio:/app/certs/:rw'
+      - 'service-grid-data:/var/service-grid-data/:rw'
+  servicegrid-redis:
+    container_name: servicegrid-redis
+    image: 'redis:6.2.5-alpine3.14'
+    logging:
+      driver: json-file
+      options:
+        max-file: '5'
+        max-size: 10m
+    networks:
+      servicegrid-network: {}
+version: '3.7'
+volumes:
+  configuration-backend: {}
+  data-hub: {}
+  data-hub-persistence: {}
+  data-storage: {}
+  hub-controller: {}
+  hub-controller-bundle: {}
+  identity-management: {}
+  identity-service: {}
+  service-grid-api: {}
+  service-grid-data: {}
+  service-grid-persistence: {}
+  service-grid-studio: {}
